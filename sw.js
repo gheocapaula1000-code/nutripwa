@@ -2,7 +2,7 @@
  * - HTML: network-first (con ripiego sulla cache se offline)
  * - file statici dello stesso sito: network-first (con ripiego sulla cache)
  * - MAI in cache: chiamate API/AI/proxy (tutto ciò che non è GET dello stesso sito) */
-const VERSION = 'nutripwa-v1.1.0';
+const VERSION = 'nutripwa-v1.2.0';
 const ASSETS = [
   './', 'index.html', 'privacy.html', 'termini.html', 'cookie.html',
   'styles.css', 'theme.js', 'app.js', 'manifest.webmanifest',
@@ -12,8 +12,12 @@ const ASSETS = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(VERSION).then((cache) => cache.addAll(ASSETS.map((a) => new URL(a, self.registration.scope).href)))
-      .then(() => self.skipWaiting())
+      // niente skipWaiting automatico: l'utente decide dal banner "Aggiorna ora" (messaggio SKIP_WAITING)
   );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {

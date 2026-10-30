@@ -4,7 +4,7 @@
  */
 (function () {
   'use strict';
-  var VERSION = '1.1.0';
+  var VERSION = '1.2.0';
   var DEFAULT_MODEL = 'gemini-3.8-flash';
   var MODEL_EXCLUDE = /(tts|live|image|audio|transcribe|embedding|robotics|omni|computer|translate|thinking|banana|learnlm|gemma|native|aqa|imagen|veo|lyria|research)/;
   var $ = function (s, r) { return (r || document).querySelector(s); };
@@ -387,7 +387,7 @@
   }
 
   /* ---------- stato ---------- */
-  var S = { photo: null, thumb: null, busy: false, ctrl: null, cur: null, day: dayStr(), stream: null, scanTimer: null, zx: null };
+  var S = { photo: null, thumb: null, busy: false, ctrl: null, cur: null, day: dayStr(), stream: null, scanTimer: null, zx: null, reg: null, updating: false, reloading: false, refreshing: false };
 
   /* ---------- navigazione ---------- */
   var ROUTES = ['home', 'risultato', 'diario', 'barcode', 'impostazioni'];
@@ -792,6 +792,12 @@
       if (u && !/^https:\/\//i.test(u) && !/^http:\/\/(localhost|127\.0\.0\.1)/i.test(u)) { showAlert({ type: 'warn', title: 'Indirizzo non valido', text: 'Deve iniziare con https://' }); return; }
       var s = getSettings(); if (u) s.proxy = u; else delete s.proxy; saveSettings(s); toast(u ? 'Proxy salvato ✔' : 'Proxy rimosso');
     };
+    $('#upd-now').onclick = applyUpdate;
+    $('#upd-later').onclick = function () { $('#update-banner').hidden = true; };
+    $('#btn-checkupdate').onclick = function () {
+      var b = $('#btn-checkupdate'); b.disabled = true; b.textContent = 'Controllo…';
+      checkForUpdate().then(function (has) { if (!has) toast('Hai già l’ultima versione ✔'); }).then(function () { b.disabled = false; b.textContent = '🔄 Controlla aggiornamenti'; });
+    };
     $('#x-export').onclick = exportData;
     $('#x-import').onchange = function (e) { importData(e.target.files[0]); e.target.value = ''; };
     $('#x-wipe').onclick = function () {
@@ -807,8 +813,85 @@
     window.addEventListener('online', function () { toast('Di nuovo online'); });
   }
 
+  /* ---------- aggiornamenti dell'app (service worker) ---------- */
+  function checkForUpdate() {
+    if (!S.reg) return Promise.resolve(false);
+    return S.reg.update().catch(function () { /* offline */ }).then(function () {
+      var done = function () { var w = !!(S.reg.waiting && navigator.serviceWorker.controller); if (w) showUpdate(); return w; };
+      if (S.reg.waiting) return done();
+      var inst = S.reg.installing; if (!inst) return false;
+      return new Promise(function (res) {
+        var t = setTimeout(function () { res(done()); }, 8000);
+        inst.addEventListener('statechange', function () { if (inst.state === 'installed' || inst.state === 'redundant' || inst.state === 'activated') { clearTimeout(t); res(done()); } });
+      });
+    });
+  }
+  function hasUnsaved() { return !!(S.busy || S.photo || (S.cur && !S.cur.id)); }
+  function showUpdate() {
+    var b = $('#update-banner'); if (!b) return;
+    $('#upd-note').textContent = hasUnsaved() ? ' Hai un’analisi non salvata: salvala prima di aggiornare, oppure tocca “Più tardi”.' : ' Tocca il pulsante per usare la versione più recente.';
+    b.hidden = false;
+  }
+  function applyUpdate() {
+    S.updating = true;
+    var w = S.reg && S.reg.waiting;
+    if (w) { w.postMessage({ type: 'SKIP_WAITING' }); setTimeout(function () { if (!S.reloading) { S.reloading = true; location.reload(); } }, 4000); }
+    else { S.reloading = true; location.reload(); }
+  }
+  function refreshNow() {
+    S.refreshing = true;
+    var guard = setTimeout(function () { if (!S.reloading) { S.reloading = true; location.reload(); } }, 6000);
+    checkForUpdate().then(function (has) { clearTimeout(guard); if (has) applyUpdate(); else { S.reloading = true; location.reload(); } });
+  }
+
+  /* ---------- "Tira per aggiornare" (utile nella PWA su iPhone, dove manca il gesto nativo) ---------- */
+  function initPTR() {
+    var el = $('#ptr'), txt = $('#ptr-txt'); if (!el) return;
+    var startY = 0, active = false, pulling = false, pull = 0, thr = 72;
+    function top() { return (window.pageYOffset || document.documentElement.scrollTop || 0) <= 8; }   // tolleranza: ripristino scroll / rimbalzo iOS
+    function render(ready) {
+      el.style.setProperty('--pull', pull + 'px');
+      el.classList.add('show'); el.classList.toggle('ready', !!ready);
+      txt.textContent = ready ? 'Rilascia per aggiornare' : 'Tira per aggiornare';
+    }
+    function reset() { active = pulling = false; pull = 0; el.classList.remove('show', 'ready', 'busy'); el.style.setProperty('--pull', '0px'); }
+    document.addEventListener('touchstart', function (e) {
+      active = false;
+      if (e.touches.length !== 1 || S.refreshing || S.stream || !top() || document.querySelector('dialog[open]')) return;
+      var t = e.target; if (t && t.closest && t.closest('input,textarea,select,video,dialog,canvas,.stepper')) return;
+      active = true; pulling = false; startY = e.touches[0].clientY;
+      thr = 4.5 * (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16);
+    }, { passive: true });
+    document.addEventListener('touchmove', function (e) {
+      if (!active) return;
+      if (e.touches.length !== 1) { reset(); return; }
+      var dy = e.touches[0].clientY - startY;
+      if (!pulling) {
+        if (dy < -6) { active = false; return; }          // sta scorrendo verso il basso la pagina: non interferire
+        if (dy < 12) return;
+        if (!top()) { active = false; return; }
+        pulling = true;
+      }
+      if (e.cancelable) e.preventDefault();
+      pull = Math.min(dy * 0.5, thr * 1.5); render(pull >= thr);
+    }, { passive: false });
+    function end(e) {
+      if (!pulling) { active = false; return; }
+      var go1 = e.type === 'touchend' && pull >= thr;
+      if (!go1) { reset(); return; }
+      pull = thr; el.style.setProperty('--pull', thr + 'px'); el.classList.add('busy', 'show'); el.classList.remove('ready'); txt.textContent = 'Aggiornamento…';
+      active = pulling = false;
+      if (hasUnsaved()) {
+        ask('Hai un’analisi non ancora salvata: se aggiorni la perdi. Vuoi aggiornare lo stesso?', 'Sì, aggiorna').then(function (ok) { if (ok) refreshNow(); else reset(); });
+      } else refreshNow();
+    }
+    document.addEventListener('touchend', end, { passive: true });
+    document.addEventListener('touchcancel', end, { passive: true });
+  }
+
   /* ---------- avvio ---------- */
   function init() {
+    try { if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; } catch (e) { /* */ }
     applyTheme(); bind(); $('#ver').textContent = VERSION;
     if (location.hash === '' || location.hash === '#') history.replaceState(null, '', '#/home');
     route();
@@ -818,10 +901,27 @@
       if (s0.gemModelManual && s0.gemModel && !isLegacyModel(s0.gemModel)) { s0.modelV = 2; saveSettings(s0); }
       else discoverModel([], null).catch(function () { /* riproverà al prossimo avvio o alla prima analisi */ });
     }
+    initPTR();
     if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
-      var hadCtl = !!navigator.serviceWorker.controller;
-      navigator.serviceWorker.addEventListener('controllerchange', function () { if (hadCtl && !S.busy && !S.cur && !S.photo) location.reload(); });
-      window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () { /* l'app funziona anche senza */ }); });
+      // ricarica SOLO se l'utente ha toccato "Aggiorna ora" (o ha tirato per aggiornare): mai in silenzio
+      navigator.serviceWorker.addEventListener('controllerchange', function () { if (S.updating && !S.reloading) { S.reloading = true; location.reload(); } });
+      navigator.serviceWorker.addEventListener('message', function () { /* riservato */ });
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').then(function (reg) {
+          S.reg = reg;
+          if (reg.waiting && navigator.serviceWorker.controller) showUpdate();
+          reg.addEventListener('updatefound', function () {
+            var nw = reg.installing; if (!nw) return;
+            nw.addEventListener('statechange', function () { if (nw.state === 'installed' && navigator.serviceWorker.controller) showUpdate(); });
+          });
+        }).catch(function () { /* l'app funziona anche senza */ });
+      });
+      // controlla gli aggiornamenti quando l'app torna in primo piano o torna la rete
+      var lastCheck = 0;
+      function softCheck() { if (!S.reg || Date.now() - lastCheck < 15000) return; lastCheck = Date.now(); checkForUpdate(); }
+      document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { softCheck(); if (S.reg && S.reg.waiting) showUpdate(); } });
+      window.addEventListener('online', softCheck);
+      setInterval(function () { if (document.visibilityState === 'visible') softCheck(); }, 30 * 60 * 1000);
     }
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();

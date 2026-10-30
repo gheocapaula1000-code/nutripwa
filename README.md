@@ -17,6 +17,8 @@ Altre funzioni:
 - **Confronto con Open Food Facts** per ogni alimento riconosciuto dall’AI, e aggiunta manuale di alimenti.
 - **Esporta / importa** tutti i dati in JSON (le chiavi non vengono mai esportate).
 - Tema chiaro/scuro/automatico e **testo grande** per una lettura più comoda.
+- **Tira per aggiornare**: dall’inizio della pagina, trascina verso il basso (utile su iPhone in modalità app). Non interferisce con lo scorrimento né con la fotocamera dello scanner; se hai un’analisi non salvata chiede conferma.
+- **Avviso di nuova versione**: quando c’è un aggiornamento compare il riquadro “È disponibile una nuova versione” con il pulsante **Aggiorna ora**. Niente ricaricamenti automatici: decidi tu, così non perdi l’analisi in corso. Il controllo avviene anche quando riapri l’app; in Opzioni c’è “Controlla aggiornamenti”.
 - Funziona offline per consultare il diario (l’analisi richiede internet).
 
 ## Come ottenere una chiave Gemini gratuita
@@ -55,7 +57,8 @@ Per pubblicarla copia i file su un qualsiasi hosting statico (GitHub Pages, Lova
 ### Test automatici
 ```bash
 pip install playwright && python3 -m http.server 8765 &
-python3 tests/e2e.py     # Chrome headless, rete AI simulata: 40+ controlli (flusso, errori, PWA, offline, footer…)
+python3 tests/e2e.py     # flusso completo; poi: python3 tests/e2e_update.py (banner aggiornamento + tira per aggiornare)
+# Chrome headless, rete AI simulata: 40+ controlli (flusso, errori, PWA, offline, footer…)
 ```
 
 ## Proxy facoltativo (chiave sul server)

@@ -18,6 +18,7 @@
 </head>
 <body class="has-nav">
 <a class="skip" href="#main">Vai al contenuto</a>
+<div id="ptr" class="ptr" role="status" aria-live="polite"><span class="ptr-ic" aria-hidden="true">⬇️</span><span id="ptr-txt">Tira per aggiornare</span></div>
 <header class="top">
   <div class="wrap">
     <img src="icons/icon-192.png" alt="" width="40" height="40">
@@ -257,7 +258,10 @@
     </div>
 
     <div class="card">
+      <button class="btn ghost" type="button" id="btn-checkupdate">🔄 Controlla aggiornamenti</button>
+      <div style="height:.6rem"></div>
       <button class="btn ghost" type="button" id="btn-install" hidden>📲 Installa l’app sul telefono</button>
+      <p class="small muted">Su iPhone e iPad puoi anche <strong>tirare la pagina verso il basso</strong> (dall’inizio) per aggiornare.</p>
       <p class="small muted" id="install-hint">Per averla come una vera app: dal menu del browser scegli “Aggiungi a schermata Home” (su iPhone: Condividi → Aggiungi a Home).</p>
       <p class="small muted">NutriPWA v<span id="ver"></span> – <a href="https://github.com/gheocapaula1000-code/nutripwa" target="_blank" rel="noopener">codice sorgente</a></p>
     </div>
@@ -283,6 +287,10 @@
   </div>
 </footer>
 
+<div id="update-banner" class="update" role="status" aria-live="polite" hidden>
+  <p><strong>È disponibile una nuova versione</strong><span id="upd-note"></span></p>
+  <div class="btns"><button class="btn big" type="button" id="upd-now">Aggiorna ora</button><button class="btn ghost" type="button" id="upd-later">Più tardi</button></div>
+</div>
 <nav class="nav" aria-label="Menu principale"><div class="wrap">
   <a href="#/home" data-nav="home"><span aria-hidden="true">📷</span>Analizza</a>
   <a href="#/diario" data-nav="diario"><span aria-hidden="true">📒</span>Diario</a>
