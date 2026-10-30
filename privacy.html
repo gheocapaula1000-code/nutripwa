@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="auto">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Privacy – NutriPWA</title>
+  <meta name="theme-color" content="#2e7d32">
+  <meta name="color-scheme" content="light dark">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip" href="#main">Vai al contenuto</a>
+<header class="top"><div class="wrap">
+  <img src="icons/icon-192.png" alt="" width="40" height="40">
+  <h1 class="name"><a href="index.html">NutriPWA<span class="sub">Stima i nutrienti dalla foto</span></a></h1>
+</div></header>
+<main id="main" tabindex="-1"><div class="wrap legal">
+<p><a class="btn sec inline" href="index.html">← Torna all’app</a></p>
+<h1>Informativa sulla privacy</h1>
+<p>NutriPWA è un’applicazione web offerta da <strong>Pi.Gi Service</strong>, Via Guido Reni 8, 35133 Padova (PD), P.IVA 05770260288, in qualità di titolare del trattamento per le sole attività descritte qui. Contatto privacy: <a href="mailto:info@pigiservice.com">info@pigiservice.com</a> (PEC: <a href="mailto:pigiservice@pec.it">pigiservice@pec.it</a>).</p>
+<h2>In breve</h2>
+<ul>
+<li><strong>Non abbiamo un database degli utenti</strong>: non esistono account né registrazione.</li>
+<li>Foto, diario, obiettivi e chiavi restano <strong>sul tuo dispositivo</strong> (IndexedDB e localStorage del browser).</li>
+<li>Non usiamo cookie di tracciamento, pubblicità o statistiche di terze parti.</li>
+</ul>
+<h2>Dati salvati nel tuo dispositivo</h2>
+<p>L’app salva localmente: impostazioni (tema, dimensione testi), le chiavi API che inserisci, gli obiettivi giornalieri, i pasti analizzati (data, valori nutrizionali, miniatura della foto). Questi dati non ci vengono trasmessi. Puoi esportarli, importarli o cancellarli in ogni momento da <em>Impostazioni → I miei dati</em>; puoi anche rimuovere la chiave API con il relativo pulsante.</p>
+<h2>Dati inviati a servizi esterni, su tua azione</h2>
+<ul>
+<li><strong>Analisi della foto</strong>: quando tocchi “Analizza il piatto”, la foto (ridimensionata) e l’eventuale testo che scrivi sono inviati direttamente dal tuo browser al provider AI che hai scelto (Google Gemini, OpenRouter, Groq o altro indirizzo da te indicato) usando la tua chiave. Il trattamento da parte del provider è regolato dai suoi termini e dalla sua informativa. Se i servizi gratuiti di Google vengono usati, la politica del provider può prevedere l’uso dei contenuti per migliorare i propri servizi: verifica le condizioni del tuo piano.</li>
+<li><strong>Proxy facoltativo</strong>: se imposti un tuo proxy, la richiesta passa dal server che hai indicato.</li>
+<li><strong>Open Food Facts</strong>: per scanner barcode e confronto alimenti il browser invia il numero del codice o il nome dell’alimento a <code>world.openfoodfacts.org</code>.</li>
+<li><strong>Scanner (solo se il browser non lo supporta)</strong>: viene scaricata una libreria open source (ZXing) da <code>cdn.jsdelivr.net</code>; il video della fotocamera è elaborato sul dispositivo e non viene inviato.</li>
+</ul>
+<h2>Fotocamera</h2>
+<p>L’accesso alla fotocamera è richiesto solo per lo scanner e avviene dopo il tuo consenso nel browser. Le immagini non sono registrate né trasmesse.</p>
+<h2>Hosting</h2>
+<p>I file dell’app sono distribuiti da un fornitore di hosting che può registrare dati tecnici di accesso (indirizzo IP, data e ora, tipo di browser) per sicurezza e funzionamento, secondo la propria informativa.</p>
+<h2>Base giuridica e conservazione</h2>
+<p>I dati sul dispositivo sono trattati da te e restano finché non li cancelli. I trasferimenti verso i provider AI avvengono su tua richiesta esplicita (art. 6.1.b e 6.1.a GDPR).</p>
+<h2>I tuoi diritti</h2>
+<p>Poiché non conserviamo i tuoi dati, esercitare i diritti (accesso, rettifica, cancellazione, portabilità) è possibile direttamente nell’app. Per qualsiasi richiesta o reclamo scrivi a <a href="mailto:info@pigiservice.com">info@pigiservice.com</a>; hai inoltre il diritto di rivolgerti al Garante per la protezione dei dati personali (<a href="https://www.garanteprivacy.it" rel="noopener">garanteprivacy.it</a>).</p>
+<h2>Dati relativi alla salute</h2>
+<p>Le informazioni sull’alimentazione possono essere considerate dati sensibili. Restando sul tuo dispositivo, sei tu a controllarle: non condividere l’esportazione JSON con persone di cui non ti fidi.</p>
+<p class="muted small">Ultimo aggiornamento: 30 ottobre 2026.</p>
+</div></main>
+<footer class="foot" id="footer">
+  <div class="wrap">
+    <p><strong>Pi.Gi Service</strong></p>
+    <address>
+      Via Guido Reni 8, 35133 Padova (PD)<br>
+      P.IVA 05770260288<br>
+      Email: <a href="mailto:info@pigiservice.com">info@pigiservice.com</a><br>
+      PEC: <a href="mailto:pigiservice@pec.it">pigiservice@pec.it</a><br>
+      Tel: <a href="tel:+393520966114">+39 352 0966114</a>
+    </address>
+    <nav aria-label="Informazioni legali">
+      <a href="privacy.html">Privacy</a>
+      <a href="termini.html">Termini</a>
+      <a href="cookie.html">Cookie</a>
+    </nav>
+    <p>NutriPWA fornisce stime AI approssimative: non sostituiscono bilancia o nutrizionista.</p>
+  </div>
+</footer>
+<script src="theme.js"></script>
+</body>
+</html>

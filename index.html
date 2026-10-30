@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="auto">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>NutriPWA – Calorie e nutrienti dalla foto del piatto</title>
+  <meta name="description" content="Scatta una foto al tuo piatto e ottieni una stima di calorie, proteine, carboidrati, grassi e fibre. Gratis, con la tua chiave AI. I dati restano sul tuo dispositivo.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#2e7d32">
+  <meta name="color-scheme" content="light dark">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="NutriPWA">
+  <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+  <script src="theme.js"></script>
+</head>
+<body class="has-nav">
+<a class="skip" href="#main">Vai al contenuto</a>
+<header class="top">
+  <div class="wrap">
+    <img src="icons/icon-192.png" alt="" width="40" height="40">
+    <h1 class="name"><a href="#/home">NutriPWA<span class="sub">Stima i nutrienti dalla foto</span></a></h1>
+    <button class="tbtn" id="btn-theme" type="button" aria-label="Cambia tema chiaro o scuro">🌓</button>
+  </div>
+</header>
+
+<main id="main" tabindex="-1"><div class="wrap">
+  <div id="alerts" aria-live="polite"></div>
+
+  <!-- HOME -->
+  <section class="page" id="page-home" aria-labelledby="h-home">
+    <h2 id="h-home" class="sr" style="position:absolute;left:-999px">Analizza un piatto</h2>
+    <ol class="steps" id="steps" aria-label="Passaggi">
+      <li data-s="1"><b>1</b>Chiave</li>
+      <li data-s="2"><b>2</b>Foto</li>
+      <li data-s="3"><b>3</b>Risultato</li>
+    </ol>
+
+    <!-- Passo 1 -->
+    <div class="card hl" id="step-key" hidden>
+      <h2>Passo 1 – Inserisci la tua chiave gratuita</h2>
+      <p>Per analizzare le foto serve una <strong>chiave AI gratuita</strong> di Google (Gemini). È come una password personale: la crei in due minuti e resta <strong>solo su questo dispositivo</strong>.</p>
+      <details>
+        <summary>❓ Come ottengo la chiave? (guida passo per passo)</summary>
+        <ol>
+          <li>Tocca il pulsante verde qui sotto: si apre il sito di Google.</li>
+          <li>Accedi con il tuo account Google (Gmail).</li>
+          <li>Tocca <strong>“Create API key”</strong> (Crea chiave API).</li>
+          <li>Tocca l’icona di copia accanto alla chiave (una lunga serie di lettere e numeri).</li>
+          <li>Torna qui, tocca il campo “Chiave” e scegli <strong>Incolla</strong>.</li>
+        </ol>
+        <a class="btn sec" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Apri Google AI Studio ↗</a>
+        <p class="hint">Il piano gratuito ha dei limiti giornalieri, sufficienti per un uso personale.</p>
+      </details>
+      <label for="in-key">Chiave Gemini</label>
+      <div class="keyrow">
+        <input id="in-key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Incolla qui la chiave (inizia con AIza…)">
+        <button class="btn sec inline" type="button" id="btn-showkey" aria-label="Mostra o nascondi la chiave">👁</button>
+      </div>
+      <p class="hint" id="key-hint">La chiave non viene mai inviata a noi: va solo a Google quando analizzi una foto.</p>
+      <button class="btn big" type="button" id="btn-savekey">Salva e continua ➜</button>
+      <p class="hint center">Usi OpenRouter, Groq o un proxy tuo? <a href="#/impostazioni">Vai alle impostazioni avanzate</a>.</p>
+    </div>
+
+    <!-- Passo 2 -->
+    <div class="card hl" id="step-photo" hidden>
+      <h2>Passo 2 – Fotografa il piatto</h2>
+      <p>Inquadra il piatto <strong>dall’alto</strong>, con buona luce. Includi tutto il piatto.</p>
+      <div class="btns">
+        <label class="btn big" for="in-cam" id="lbl-cam">📷 Scatta una foto</label>
+        <label class="btn big sec" for="in-gal" id="lbl-gal">🖼️ Scegli dalla galleria</label>
+      </div>
+      <input id="in-cam" type="file" accept="image/*" capture="environment">
+      <input id="in-gal" type="file" accept="image/*">
+      <p class="hint center">Hai una confezione? Usa invece <a href="#/barcode">lo scanner del codice a barre</a>.</p>
+    </div>
+
+    <!-- Anteprima -->
+    <div class="card hl" id="step-preview" hidden>
+      <h2>Foto pronta ✔</h2>
+      <img id="preview" class="preview" alt="Anteprima della foto del piatto">
+      <label for="in-hint">Vuoi aggiungere un dettaglio? (facoltativo)</label>
+      <input id="in-hint" type="text" maxlength="200" placeholder="Es. “pasta al pomodoro, porzione piccola”">
+      <p class="hint">Aiuta l’AI a essere più precisa.</p>
+      <div class="stack">
+        <button class="btn big" type="button" id="btn-analyze">✨ Analizza il piatto</button>
+        <button class="btn ghost" type="button" id="btn-change">Cambia foto</button>
+      </div>
+    </div>
+
+    <!-- Caricamento -->
+    <div class="card hl center" id="step-loading" hidden>
+      <div class="spinner" role="status" aria-label="Analisi in corso"></div>
+      <h2>Sto guardando il tuo piatto…</h2>
+      <p id="loading-txt">Di solito servono 5–15 secondi. Non chiudere la pagina.</p>
+      <button class="btn ghost inline" type="button" id="btn-cancel">Annulla</button>
+    </div>
+
+    <div class="disc" role="note">⚠️ <strong>Sono stime AI approssimative.</strong> Non sostituiscono la bilancia, né il parere di un medico o di un nutrizionista.</div>
+  </section>
+
+  <!-- RISULTATO / MODIFICA PASTO -->
+  <section class="page" id="page-risultato" aria-labelledby="h-result">
+    <ol class="steps" aria-label="Passaggi">
+      <li class="done"><b>✓</b>Chiave</li><li class="done"><b>✓</b>Foto</li><li class="now"><b>3</b>Risultato</li>
+    </ol>
+    <div class="card hl total">
+      <h2 id="h-result">Passo 3 – Ecco il risultato</h2>
+      <img id="res-thumb" class="preview" alt="Foto del piatto" hidden style="max-height:14rem">
+      <div class="kcal"><span id="r-kcal">0</span> <small>kcal</small></div>
+      <p class="muted small" id="r-sub"></p>
+      <div class="macros">
+        <div class="macro" style="--c:var(--prot)"><b id="r-prot">0</b><span>Proteine (g)</span></div>
+        <div class="macro" style="--c:var(--carb)"><b id="r-carb">0</b><span>Carboidrati (g)</span></div>
+        <div class="macro" style="--c:var(--fat)"><b id="r-fat">0</b><span>Grassi (g)</span></div>
+        <div class="macro" style="--c:var(--fib)"><b id="r-fib">0</b><span>Fibre (g)</span></div>
+      </div>
+      <p>Affidabilità stimata: <span class="badge" id="r-aff">–</span></p>
+      <p class="muted" id="r-note"></p>
+    </div>
+
+    <div class="card">
+      <h3>Alimenti riconosciuti</h3>
+      <p class="hint">La porzione non è giusta? Cambia i grammi con <strong>+</strong> e <strong>−</strong>: i valori si ricalcolano da soli.</p>
+      <div id="foods"></div>
+      <button class="btn sec" type="button" id="btn-addfood">➕ Aggiungi un alimento</button>
+    </div>
+
+    <div class="card">
+      <label for="r-title" style="margin-top:0">Nome del pasto</label>
+      <input id="r-title" type="text" maxlength="80" placeholder="Es. Pranzo">
+      <label for="r-type">Quando l’hai mangiato?</label>
+      <select id="r-type">
+        <option value="colazione">🥐 Colazione</option><option value="pranzo">🍝 Pranzo</option>
+        <option value="cena">🍲 Cena</option><option value="spuntino">🍎 Spuntino</option>
+      </select>
+    </div>
+    <div class="stack">
+      <button class="btn big" type="button" id="btn-save">💾 Salva nel diario</button>
+      <button class="btn warn" type="button" id="btn-delete" hidden>🗑️ Elimina questo pasto</button>
+      <button class="btn ghost" type="button" id="btn-new">📷 Nuova foto</button>
+    </div>
+    <p class="disc" role="note" style="margin-top:1rem">⚠️ Stime AI approssimative: non sostituiscono bilancia o nutrizionista.</p>
+  </section>
+
+  <!-- DIARIO -->
+  <section class="page" id="page-diario" aria-labelledby="h-diario">
+    <h2 id="h-diario">📒 Il mio diario</h2>
+    <div class="daynav">
+      <button type="button" id="d-prev" aria-label="Giorno precedente">◀</button>
+      <input type="date" id="d-date" aria-label="Scegli il giorno">
+      <button type="button" id="d-next" aria-label="Giorno successivo">▶</button>
+    </div>
+    <div class="card" id="d-summary"></div>
+    <details id="goals-box">
+      <summary>🎯 I miei obiettivi giornalieri</summary>
+      <div class="goals" id="goals-form"></div>
+      <p class="hint">Sono valori indicativi. Per un obiettivo adatto a te chiedi al tuo medico o a un nutrizionista.</p>
+      <button class="btn sec" type="button" id="btn-savegoals">Salva obiettivi</button>
+    </details>
+    <h3>Pasti del giorno</h3>
+    <div id="d-meals"></div>
+    <a class="btn" href="#/home">📷 Aggiungi un pasto</a>
+  </section>
+
+  <!-- BARCODE -->
+  <section class="page" id="page-barcode" aria-labelledby="h-barcode">
+    <h2 id="h-barcode">🔎 Scanner codice a barre</h2>
+    <p>Per cibi confezionati: inquadra il codice a barre e prendiamo i valori da <strong>Open Food Facts</strong>, il database aperto e gratuito.</p>
+    <div class="card">
+      <video id="bc-video" class="video" playsinline muted aria-label="Anteprima fotocamera"></video>
+      <div class="stack">
+        <button class="btn big" type="button" id="bc-start">📷 Avvia la fotocamera</button>
+        <button class="btn ghost" type="button" id="bc-stop" hidden>Ferma la fotocamera</button>
+      </div>
+      <p class="hint" id="bc-status"></p>
+    </div>
+    <div class="card">
+      <h3>Oppure scrivi il numero</h3>
+      <label for="bc-manual" style="margin-top:0">Numero sotto il codice a barre (8 o 13 cifre)</label>
+      <input id="bc-manual" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="14" placeholder="Es. 8076800195057">
+      <div style="height:.6rem"></div>
+      <button class="btn sec" type="button" id="bc-search">Cerca il prodotto</button>
+    </div>
+    <div class="card" id="bc-result" hidden></div>
+  </section>
+
+  <!-- IMPOSTAZIONI -->
+  <section class="page" id="page-impostazioni" aria-labelledby="h-set">
+    <h2 id="h-set">⚙️ Opzioni e impostazioni</h2>
+
+    <div class="card">
+      <h3>Aspetto</h3>
+      <label for="s-theme" style="margin-top:0">Tema</label>
+      <select id="s-theme"><option value="auto">Automatico (come il telefono)</option><option value="light">Chiaro</option><option value="dark">Scuro</option></select>
+      <label for="s-size">Dimensione dei testi</label>
+      <select id="s-size"><option value="1">Normale</option><option value="1.15">Grande</option><option value="1.3">Molto grande</option></select>
+    </div>
+
+    <div class="card">
+      <h3>🔑 Chiave Gemini (consigliata, gratis)</h3>
+      <p class="small muted" id="s-keystate"></p>
+      <label for="s-key">Chiave</label>
+      <input id="s-key" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…">
+      <label for="s-model">Modello Gemini</label>
+      <input id="s-model" type="text" placeholder="gemini-2.5-flash" autocapitalize="off">
+      <div class="btns" style="margin-top:.8rem">
+        <button class="btn" type="button" id="s-savekey">Salva</button>
+        <button class="btn warn" type="button" id="s-rmkey">Rimuovi la chiave</button>
+      </div>
+      <p class="hint">Non hai la chiave? <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Creala gratis su aistudio.google.com ↗</a></p>
+    </div>
+
+    <details>
+      <summary>Provider alternativo (OpenRouter, Groq, altro)</summary>
+      <p class="small muted">Se Gemini non risponde (o hai finito il limite gratuito), NutriPWA prova questo provider. Deve supportare le immagini e il formato “OpenAI-compatibile”.</p>
+      <label for="a-preset">Servizio</label>
+      <select id="a-preset">
+        <option value="openrouter">OpenRouter</option>
+        <option value="groq">Groq</option>
+        <option value="custom">Altro (indirizzo personalizzato)</option>
+      </select>
+      <label for="a-base">Indirizzo base (Base URL)</label>
+      <input id="a-base" type="url" placeholder="https://openrouter.ai/api/v1" autocapitalize="off">
+      <label for="a-model">Modello (deve leggere le immagini)</label>
+      <input id="a-model" type="text" autocapitalize="off">
+      <label for="a-key">Chiave del provider</label>
+      <input id="a-key" type="password" autocomplete="off" spellcheck="false">
+      <div class="btns" style="margin-top:.8rem">
+        <button class="btn sec" type="button" id="a-save">Salva</button>
+        <button class="btn warn" type="button" id="a-rm">Rimuovi la chiave</button>
+      </div>
+    </details>
+
+    <details>
+      <summary>Proxy personale (facoltativo, per esperti)</summary>
+      <p class="small muted">Se hai un tuo proxy (Free AI Hub, Supabase Edge Function…) la chiave resta sul server e non serve inserirla qui. Vedi la guida nel README.</p>
+      <label for="p-url">Indirizzo del proxy</label>
+      <input id="p-url" type="url" placeholder="https://…supabase.co/functions/v1/ai-proxy" autocapitalize="off">
+      <button class="btn sec" type="button" id="p-save" style="margin-top:.8rem">Salva proxy</button>
+    </details>
+
+    <div class="card">
+      <h3>💾 I miei dati</h3>
+      <p class="small muted">Diario e foto sono salvati <strong>solo in questo dispositivo</strong>. Fai ogni tanto un’esportazione per non perderli (le chiavi non vengono esportate).</p>
+      <div class="btns">
+        <button class="btn sec" type="button" id="x-export">⬇️ Esporta (JSON)</button>
+        <label class="btn sec" for="x-import">⬆️ Importa (JSON)</label>
+      </div>
+      <input id="x-import" type="file" accept="application/json,.json">
+      <div style="height:.7rem"></div>
+      <button class="btn warn" type="button" id="x-wipe">Cancella tutti i miei dati</button>
+    </div>
+
+    <div class="card">
+      <button class="btn ghost" type="button" id="btn-install" hidden>📲 Installa l’app sul telefono</button>
+      <p class="small muted" id="install-hint">Per averla come una vera app: dal menu del browser scegli “Aggiungi a schermata Home” (su iPhone: Condividi → Aggiungi a Home).</p>
+      <p class="small muted">NutriPWA v<span id="ver"></span> – <a href="https://github.com/gheocapaula1000-code/nutripwa" target="_blank" rel="noopener">codice sorgente</a></p>
+    </div>
+  </section>
+</div></main>
+
+<footer class="foot" id="footer">
+  <div class="wrap">
+    <p><strong>Pi.Gi Service</strong></p>
+    <address>
+      Via Guido Reni 8, 35133 Padova (PD)<br>
+      P.IVA 05770260288<br>
+      Email: <a href="mailto:info@pigiservice.com">info@pigiservice.com</a><br>
+      PEC: <a href="mailto:pigiservice@pec.it">pigiservice@pec.it</a><br>
+      Tel: <a href="tel:+393520966114">+39 352 0966114</a>
+    </address>
+    <nav aria-label="Informazioni legali">
+      <a href="privacy.html">Privacy</a>
+      <a href="termini.html">Termini</a>
+      <a href="cookie.html">Cookie</a>
+    </nav>
+    <p>NutriPWA fornisce stime AI approssimative: non sostituiscono bilancia o nutrizionista.</p>
+  </div>
+</footer>
+
+<nav class="nav" aria-label="Menu principale"><div class="wrap">
+  <a href="#/home" data-nav="home"><span aria-hidden="true">📷</span>Analizza</a>
+  <a href="#/diario" data-nav="diario"><span aria-hidden="true">📒</span>Diario</a>
+  <a href="#/barcode" data-nav="barcode"><span aria-hidden="true">🔎</span>Barcode</a>
+  <a href="#/impostazioni" data-nav="impostazioni"><span aria-hidden="true">⚙️</span>Opzioni</a>
+</div></nav>
+<script src="app.js"></script>
+</body>
+</html>
