@@ -1,8 +1,8 @@
 /* NutriPWA service worker – percorsi relativi, cache versionata.
  * - HTML: network-first (con ripiego sulla cache se offline)
- * - file statici dello stesso sito: stale-while-revalidate
+ * - file statici dello stesso sito: network-first (con ripiego sulla cache)
  * - MAI in cache: chiamate API/AI/proxy (tutto ciò che non è GET dello stesso sito) */
-const VERSION = 'nutripwa-v1.0.0';
+const VERSION = 'nutripwa-v1.1.0';
 const ASSETS = [
   './', 'index.html', 'privacy.html', 'termini.html', 'cookie.html',
   'styles.css', 'theme.js', 'app.js', 'manifest.webmanifest',
@@ -44,13 +44,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // file statici (JS/CSS/icone): network-first, così un aggiornamento dell'app arriva subito
   event.respondWith(
-    caches.match(req).then((cached) => {
-      const net = fetch(req).then((res) => {
-        if (res.ok && res.type === 'basic') { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); }
-        return res;
-      }).catch(() => cached);
-      return cached || net;
-    })
+    fetch(req).then((res) => {
+      if (res.ok && res.type === 'basic') { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); }
+      return res;
+    }).catch(() => caches.match(req))
   );
 });

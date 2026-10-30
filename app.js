@@ -4,7 +4,9 @@
  */
 (function () {
   'use strict';
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.0';
+  var DEFAULT_MODEL = 'gemini-3.8-flash';
+  var MODEL_EXCLUDE = /(tts|live|image|audio|transcribe|embedding|robotics|omni|computer|translate|thinking|banana|learnlm|gemma|native|aqa|imagen|veo|lyria|research)/;
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
   var NUT = ['kcal', 'proteine_g', 'carboidrati_g', 'grassi_g', 'fibra_g'];
@@ -191,9 +193,10 @@
     var msg = ''; try { msg = (body && (body.error && (body.error.message || body.error) || body.message)) || ''; } catch (e) { /* */ }
     msg = typeof msg === 'string' ? msg : JSON.stringify(msg);
     var lm = msg.toLowerCase();
+    if (status !== 429 && status !== 401 && /model/.test(lm) && /(not found|not supported|no longer|deprecated|retired|not available|limited to users|unavailable)/.test(lm)) status = 404;
     if (status === 400 && (lm.indexOf('api key') >= 0 || lm.indexOf('api_key') >= 0)) return new AppError('KEY', 'La chiave non è valida', 'Controlla di averla copiata per intero, senza spazi. Puoi crearne una nuova gratis su aistudio.google.com.', true);
     if (status === 401 || status === 403) return new AppError('KEY', 'La chiave non è accettata', 'Il servizio (' + prov + ') ha rifiutato la chiave: potrebbe essere errata, scaduta o senza permessi. Controllala nelle Impostazioni.', true);
-    if (status === 404) return new AppError('MODEL', 'Modello non trovato', 'Il nome del modello (' + prov + ') non esiste o non è disponibile per la tua chiave. Controllalo nelle Impostazioni.', true);
+    if (status === 404) return new AppError('MODEL', 'Modello AI non disponibile', 'Il modello usato (' + prov + ') non è più disponibile per la tua chiave. Apri le Opzioni e scegli un altro modello dall’elenco (o tocca “Aggiorna elenco”).', true);
     if (status === 413) return new AppError('BIG', 'Foto troppo grande', 'Riprova con un’altra foto.', false);
     if (status === 429) return new AppError('QUOTA', 'Limite gratuito raggiunto', 'Hai fatto molte richieste in poco tempo o finito la quota di oggi (' + prov + '). Aspetta un minuto e riprova, oppure aggiungi un provider alternativo nelle Impostazioni.', true);
     if (status >= 500) return new AppError('SERVER', 'Il servizio AI è momentaneamente occupato', prov + ' non risponde in questo momento. Riprova tra poco.', true);
@@ -206,16 +209,76 @@
     if (navigator.onLine === false) return new AppError('OFFLINE', 'Sei offline', 'Non c’è connessione a internet. Collegati al Wi-Fi o ai dati mobili e riprova.', false);
     return new AppError('NET', 'Non riesco a collegarmi al servizio', 'Controlla la connessione. Se usi un proxy o un indirizzo personalizzato, verifica che sia corretto e che permetta l’accesso dal browser (CORS).', true);
   }
-  function callGemini(s, prompt, b64, signal) {
-    var model = (s.gemModel || 'gemini-2.5-flash').trim();
+  /* ----- modelli Gemini: elenco dalla chiave e scelta automatica del migliore ----- */
+  function modelVersion(id) { var m = /gemini-(\d+(?:\.\d+)?)/.exec(id); return m ? parseFloat(m[1]) : 0; }
+  function isLegacyModel(id) { return /^gemini-(1\.|2\.)/.test(id || ''); }
+  function rankModels(raw) {
+    var out = [];
+    (raw || []).forEach(function (m) {
+      var id = String(m.name || '').replace(/^models\//, '');
+      var methods = m.supportedGenerationMethods || [];
+      if (!/^gemini-/.test(id) || methods.indexOf('generateContent') < 0 || id.indexOf('flash') < 0 || MODEL_EXCLUDE.test(id)) return;
+      var preview = /(preview|exp)/.test(id), lite = /lite/.test(id), alias = /-latest$/.test(id);
+      out.push({ id: id, label: m.displayName || id, ver: alias ? 0 : modelVersion(id), tier: (preview ? 2 : 0) + (lite ? 1 : 0), dated: /-\d{3}$|-\d{2}-\d{4}$|-\d{2}-\d{2}$/.test(id) ? 1 : 0 });
+    });
+    // stabile non-lite > stabile lite > preview non-lite > preview lite; poi versione più recente
+    out.sort(function (x, y) { return x.tier - y.tier || y.ver - x.ver || x.dated - y.dated || x.id.length - y.id.length; });
+    return out;
+  }
+  function fetchModels(key, signal) {
+    var all = [];
+    function page(tok, n) {
+      var url = 'https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000' + (tok ? '&pageToken=' + encodeURIComponent(tok) : '');
+      return fetch(url, { headers: { 'x-goog-api-key': key }, cache: 'no-store', signal: signal }).then(function (r) {
+        return r.json().catch(function () { return null; }).then(function (d) {
+          if (!r.ok) throw httpError(r.status, d, 'Gemini');
+          all = all.concat((d && d.models) || []);
+          return d && d.nextPageToken && n < 4 ? page(d.nextPageToken, n + 1) : all;
+        });
+      });
+    }
+    return page('', 0).catch(function (e) { throw netError(e, signal); });
+  }
+  // salva elenco + modello scelto (se non scelto a mano). exclude = modelli già falliti
+  function storeRanked(ranked, exclude, force) {
+    var s = getSettings(); exclude = exclude || [];
+    s.gemModels = ranked.map(function (x) { return { id: x.id, label: x.label }; });
+    var inList = ranked.some(function (x) { return x.id === s.gemModel; });
+    var keepManual = s.gemModelManual && inList && !force && exclude.indexOf(s.gemModel) < 0;
+    if (!keepManual) {
+      var pick = null;
+      for (var i = 0; i < ranked.length; i++) { if (exclude.indexOf(ranked[i].id) < 0) { pick = ranked[i].id; break; } }
+      if (pick) { s.gemModel = pick; s.gemModelManual = false; }
+    }
+    s.modelV = 2; saveSettings(s);
+    return s.gemModel || null;
+  }
+  function discoverModel(exclude, signal) {
+    var s = getSettings();
+    return fetchModels(s.gemKey, signal).then(function (raw) {
+      var ranked = rankModels(raw);
+      if (!ranked.length) return null;
+      var before = exclude && exclude.length;
+      var m = storeRanked(ranked, exclude, !!before);
+      return exclude && exclude.indexOf(m) >= 0 ? null : m;
+    });
+  }
+  function rawGemini(s, model, prompt, b64, signal, withMime) {
     var url = s.proxy ? s.proxy : 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
     var headers = { 'Content-Type': 'application/json' };
     if (!s.proxy) headers['x-goog-api-key'] = s.gemKey;
-    var body = { contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: 'image/jpeg', data: b64 } }] }], generationConfig: { temperature: 0.2, responseMimeType: 'application/json' } };
+    var gc = {};
+    if (withMime) gc.responseMimeType = 'application/json';
+    if (modelVersion(model) < 3) gc.temperature = 0.2;     // i modelli Gemini 3+ funzionano meglio con la temperatura predefinita
+    var body = { contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: 'image/jpeg', data: b64 } }] }], generationConfig: gc };
     if (s.proxy) body.model = model;
     return fetch(url, { method: 'POST', headers: headers, body: JSON.stringify(body), signal: signal, cache: 'no-store' }).then(function (r) {
       return r.json().catch(function () { return null; }).then(function (d) {
-        if (!r.ok) throw httpError(r.status, d, s.proxy ? 'proxy' : 'Gemini');
+        if (!r.ok) {
+          var m = ''; try { m = String((d && d.error && d.error.message) || ''); } catch (e) { /* */ }
+          if (r.status === 400 && withMime && /mime|generation_?config|json/i.test(m)) return rawGemini(s, model, prompt, b64, signal, false); // ripiego: senza JSON mode
+          throw httpError(r.status, d, s.proxy ? 'proxy' : 'Gemini');
+        }
         var c = d && d.candidates && d.candidates[0];
         if (d && d.promptFeedback && d.promptFeedback.blockReason) throw new AppError('SAFETY', 'Foto non analizzabile', 'Il servizio ha bloccato l’immagine. Prova con un’altra foto del piatto.', false);
         var text = c && c.content && c.content.parts && c.content.parts.map(function (p) { return p.text || ''; }).join('');
@@ -223,6 +286,25 @@
         return text;
       });
     });
+  }
+  function callGemini(s0, prompt, b64, signal) {
+    var tried = [], retries = 0;
+    function run() {
+      var s = getSettings(), p = Promise.resolve();
+      if (!s.proxy && s.gemKey && (!s.gemModel || (s.modelV !== 2 && !s.gemModelManual && isLegacyModel(s.gemModel)))) p = discoverModel([], signal).catch(function () { /* si prova comunque */ });
+      return p.then(function () {
+        var s2 = getSettings(), model = (s2.gemModel || DEFAULT_MODEL).trim(); tried.push(model);
+        return rawGemini(s2, model, prompt, b64, signal, true);
+      }).catch(function (e) {
+        e = netError(e, signal);
+        if (e.code === 'MODEL' && !s.proxy && s.gemKey && retries < 2) {
+          retries++; var lt = $('#loading-txt'); if (lt) lt.textContent = 'Aggiorno il modello AI…';
+          return discoverModel(tried, signal).then(function (pick) { if (!pick) throw e; return run(); }, function () { throw e; });
+        }
+        throw e;
+      });
+    }
+    return run();
   }
   function callOpenAI(a, prompt, dataUrl, signal) {
     var url = String(a.base || '').replace(/\/+$/, '') + '/chat/completions';
@@ -560,17 +642,35 @@
   function renderSettings() {
     var s = getSettings();
     $('#s-theme').value = s.theme || 'auto'; $('#s-size').value = String(s.size || '1');
-    $('#s-key').value = s.gemKey || ''; $('#s-model').value = s.gemModel || 'gemini-2.5-flash';
+    $('#s-key').value = s.gemKey || ''; renderModelSelect();
     $('#s-keystate').textContent = s.gemKey ? '✅ Chiave salvata su questo dispositivo.' : 'Nessuna chiave Gemini salvata.';
     var a = s.alt; $('#a-preset').value = a.preset || 'openrouter'; $('#a-base').value = a.base || ''; $('#a-model').value = a.model || ''; $('#a-key').value = a.key || '';
     $('#p-url').value = s.proxy || '';
     $('#ver').textContent = VERSION;
+    if (s.gemKey && !s.proxy && (!s.gemModels || !s.gemModels.length)) refreshModelList(true);
+  }
+  function renderModelSelect() {
+    var s = getSettings(), sel = $('#s-model'); sel.innerHTML = '';
+    var o = document.createElement('option'); o.value = ''; o.textContent = 'Automatico (consigliato)'; sel.appendChild(o);
+    var list = (s.gemModels || []).slice();
+    if (s.gemModel && !list.some(function (x) { return x.id === s.gemModel; })) list.unshift({ id: s.gemModel, label: s.gemModel });
+    list.forEach(function (m) { var op = document.createElement('option'); op.value = m.id; op.textContent = m.id + (m.label && m.label !== m.id ? ' – ' + m.label : ''); sel.appendChild(op); });
+    sel.value = s.gemModelManual ? s.gemModel : '';
+    $('#s-modelhint').textContent = s.proxy ? 'Con il proxy attivo il modello viene indicato al proxy.' : (s.gemModel ? 'Modello in uso: ' + s.gemModel + (s.gemModelManual ? ' (scelto da te)' : ' (scelto automaticamente)') : (s.gemKey ? 'Verrà scelto automaticamente alla prima analisi.' : 'Salva prima la chiave: poi il modello viene scelto da solo.'));
+  }
+  function refreshModelList(silent) {
+    var s = getSettings(); if (!s.gemKey) { if (!silent) showAlert({ type: 'warn', title: 'Manca la chiave', text: 'Salva prima la tua chiave Gemini.' }); return Promise.resolve(); }
+    var btn = $('#s-refresh'); if (!silent) { btn.disabled = true; btn.textContent = 'Aggiorno…'; }
+    return fetchModels(s.gemKey).then(function (raw) {
+      var ranked = rankModels(raw); if (!ranked.length) throw new AppError('NOMODEL', 'Nessun modello adatto', 'Con questa chiave non vedo modelli Gemini “Flash”.', false);
+      storeRanked(ranked, [], false); renderModelSelect(); if (!silent) toast('Elenco modelli aggiornato ✔');
+    }).catch(function (e) { if (!silent) showAlert({ type: 'err', title: e.title || 'Non riesco ad aggiornare l’elenco', text: e.text || '' }); }).then(function () { btn.disabled = false; btn.textContent = '🔄 Aggiorna elenco modelli'; });
   }
   function verifyGemini(key) {
-    return fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1', { headers: { 'x-goog-api-key': key }, cache: 'no-store' }).then(function (r) {
-      if (r.status === 400 || r.status === 401 || r.status === 403) return 'bad';
-      return r.ok ? 'ok' : 'unknown';
-    }).catch(function () { return 'unknown'; });
+    // stessa logica dei modelli usata per l'analisi: elenco dalla chiave + scelta del migliore
+    return fetchModels(key).then(function (raw) { return { state: 'ok', ranked: rankModels(raw) }; }).catch(function (e) {
+      return { state: (e.code === 'KEY' || e.code === 'BAD') ? 'bad' : 'unknown' };
+    });
   }
   function saveKey(inputEl, after) {
     var key = inputEl.value.trim().replace(/\s+/g, '');
@@ -579,9 +679,14 @@
     var btn = after.btn; var old = btn.textContent; btn.disabled = true; btn.textContent = 'Controllo la chiave…';
     verifyGemini(key).then(function (r) {
       btn.disabled = false; btn.textContent = old;
-      if (r === 'bad') { showAlert({ type: 'err', title: 'Chiave non valida', text: 'Google non riconosce questa chiave. Controlla di averla copiata tutta, oppure creane una nuova su aistudio.google.com.' }); return; }
+      if (r.state === 'bad') { showAlert({ type: 'err', title: 'Chiave non valida', text: 'Google non riconosce questa chiave. Controlla di averla copiata tutta, oppure creane una nuova su aistudio.google.com.' }); return; }
       var s = getSettings(); s.gemKey = key; saveSettings(s); inputEl.value = '';
-      after.done(r === 'unknown');
+      var model = null;
+      if (r.state === 'ok') {
+        if (!r.ranked.length) showAlert({ type: 'warn', title: 'Chiave valida, ma nessun modello adatto', text: 'Con questa chiave non vedo modelli Gemini “Flash” per le immagini. Provo comunque con il modello predefinito.' });
+        else model = storeRanked(r.ranked, [], false);
+      }
+      after.done(r.state === 'unknown', model);
     });
   }
 
@@ -621,7 +726,7 @@
     $('#btn-change').onclick = resetPhoto;
     $('#btn-cancel').onclick = function () { if (S.ctrl) S.ctrl.abort(); };
     $('#btn-showkey').onclick = function () { var i = $('#in-key'); i.type = i.type === 'password' ? 'text' : 'password'; };
-    $('#btn-savekey').onclick = function () { saveKey($('#in-key'), { btn: $('#btn-savekey'), done: function (unk) { toast('Chiave salvata ✔'); if (unk) showAlert({ type: 'warn', title: 'Chiave salvata, ma non verificata', text: 'Non sono riuscito a controllarla (connessione?). Funzionerà se è corretta.' }); renderHome(); } }); };
+    $('#btn-savekey').onclick = function () { saveKey($('#in-key'), { btn: $('#btn-savekey'), done: function (unk, model) { toast('Chiave salvata ✔' + (model ? ' · modello ' + model : '')); if (unk) showAlert({ type: 'warn', title: 'Chiave salvata, ma non verificata', text: 'Non sono riuscito a controllarla (connessione?). Funzionerà se è corretta.' }); renderHome(); } }); };
     $('#btn-theme').onclick = function () {
       var s = getSettings(), r = document.documentElement.getAttribute('data-theme');
       var dark = r === 'dark' || (r === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -665,11 +770,16 @@
     // impostazioni
     $('#s-theme').onchange = $('#s-size').onchange = function () { var s = getSettings(); s.theme = $('#s-theme').value; s.size = $('#s-size').value; saveSettings(s); applyTheme(); };
     $('#s-savekey').onclick = function () {
-      var s = getSettings(), model = $('#s-model').value.trim() || 'gemini-2.5-flash';
-      if (!$('#s-key').value.trim()) { s.gemModel = model; saveSettings(s); renderSettings(); toast('Salvato ✔'); return; }
-      saveKey($('#s-key'), { btn: $('#s-savekey'), done: function (unk) { var s2 = getSettings(); s2.gemModel = model; saveSettings(s2); renderSettings(); toast('Chiave salvata ✔'); if (unk) showAlert({ type: 'warn', title: 'Chiave salvata, ma non verificata', text: 'Non sono riuscito a controllarla (connessione?).' }); } });
+      if (!$('#s-key').value.trim()) { showAlert({ type: 'warn', title: 'Manca la chiave', text: 'Incolla la nuova chiave nel campo, poi tocca Salva.' }); return; }
+      saveKey($('#s-key'), { btn: $('#s-savekey'), done: function (unk, model) { renderSettings(); toast('Chiave salvata ✔' + (model ? ' · modello ' + model : '')); if (unk) showAlert({ type: 'warn', title: 'Chiave salvata, ma non verificata', text: 'Non sono riuscito a controllarla (connessione?).' }); } });
     };
-    $('#s-rmkey').onclick = function () { ask('Rimuovere la chiave Gemini da questo dispositivo?', 'Sì, rimuovi').then(function (ok) { if (!ok) return; var s = getSettings(); delete s.gemKey; saveSettings(s); renderSettings(); toast('Chiave rimossa'); }); };
+    $('#s-model').onchange = function () {
+      var s = getSettings(), v = $('#s-model').value;
+      if (v) { s.gemModel = v; s.gemModelManual = true; s.modelV = 2; saveSettings(s); renderModelSelect(); toast('Modello scelto: ' + v); }
+      else { s.gemModelManual = false; saveSettings(s); refreshModelList(false); }
+    };
+    $('#s-refresh').onclick = function () { refreshModelList(false); };
+    $('#s-rmkey').onclick = function () { ask('Rimuovere la chiave Gemini da questo dispositivo?', 'Sì, rimuovi').then(function (ok) { if (!ok) return; var s = getSettings(); delete s.gemKey; delete s.gemModels; delete s.gemModel; delete s.gemModelManual; delete s.modelV; saveSettings(s); renderSettings(); toast('Chiave rimossa'); }); };
     $('#a-preset').onchange = function () { var p = PRESETS[$('#a-preset').value]; if (p && $('#a-preset').value !== 'custom') { $('#a-base').value = p.base; $('#a-model').value = p.model; } };
     $('#a-save').onclick = function () {
       var base = $('#a-base').value.trim(), model = $('#a-model').value.trim(), key = $('#a-key').value.trim();
@@ -702,7 +812,15 @@
     applyTheme(); bind(); $('#ver').textContent = VERSION;
     if (location.hash === '' || location.hash === '#') history.replaceState(null, '', '#/home');
     route();
+    // migrazione: modelli ritirati (es. gemini-2.5-flash) -> scelta automatica del modello disponibile
+    var s0 = getSettings();
+    if (s0.gemKey && !s0.proxy && s0.modelV !== 2 && navigator.onLine !== false) {
+      if (s0.gemModelManual && s0.gemModel && !isLegacyModel(s0.gemModel)) { s0.modelV = 2; saveSettings(s0); }
+      else discoverModel([], null).catch(function () { /* riproverà al prossimo avvio o alla prima analisi */ });
+    }
     if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+      var hadCtl = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener('controllerchange', function () { if (hadCtl && !S.busy && !S.cur && !S.photo) location.reload(); });
       window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () { /* l'app funziona anche senza */ }); });
     }
   }

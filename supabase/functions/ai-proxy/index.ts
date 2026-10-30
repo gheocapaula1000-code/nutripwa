@@ -10,7 +10,7 @@
 // Risposta: la risposta di Gemini, invariata.
 
 const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") ?? "*"; // IN PRODUZIONE: imposta il tuo dominio!
-const MODELS = (Deno.env.get("ALLOWED_MODELS") ?? "gemini-2.5-flash,gemini-2.5-flash-lite").split(",");
+const MODELS = (Deno.env.get("ALLOWED_MODELS") ?? "gemini-3.8-flash,gemini-3.6-flash,gemini-3.5-flash-lite").split(",");
 const MAX_BYTES = 4_000_000; // ~4 MB: le foto arrivano già compresse dal client
 
 const cors = {

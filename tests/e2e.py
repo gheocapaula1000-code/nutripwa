@@ -10,12 +10,26 @@ def check(name, cond, extra=''):
     print(('PASS ' if cond else 'FAIL ') + name + (' ' + str(extra) if extra and not cond else ''))
     if not cond: fails.append(name)
 AI = {"alimenti":[{"nome":"Pasta al pomodoro","peso_g":200,"kcal":320,"proteine_g":11,"carboidrati_g":60,"grassi_g":5,"fibra_g":4},{"nome":"Parmigiano","peso_g":10,"kcal":40,"proteine_g":3.5,"carboidrati_g":0,"grassi_g":2.8,"fibra_g":0}],"totale":{"kcal":360},"note":"Porzione stimata dal piatto.","affidabilita":"media"}
-mode = {'gemini': 'ok'}
+def M(n, methods=('generateContent',)): return {"name": "models/" + n, "displayName": n, "supportedGenerationMethods": list(methods)}
+LISTS = {
+ 'full': [M('gemini-2.5-flash'), M('gemini-2.5-flash-lite'), M('gemini-3.6-flash'), M('gemini-3.8-flash'), M('gemini-3.9-flash-preview'), M('gemini-3.9-flash-lite'),
+          M('gemini-3.8-flash-tts'), M('gemini-3.8-live'), M('gemini-3.8-pro'), M('gemini-embedding-001', ('embedContent',)), M('gemma-3-27b-it'), M('gemini-3.8-flash-image')],
+ 'lite': [M('gemini-3.1-flash-lite'), M('gemini-3.5-flash-lite'), M('gemini-3.9-flash-preview'), M('gemini-3.8-pro')],
+ 'preview': [M('gemini-3.9-flash-lite-preview'), M('gemini-3.9-flash-preview'), M('gemini-3.8-pro')],
+}
+mode = {'gemini': 'ok', 'list': 'full', 'dead': [], 'mime400': False}
+models_calls = []
 def gem(route):
     req = route.request
-    if req.method == 'GET':  # verifica chiave
-        return route.fulfill(status=200, content_type='application/json', body='{"models":[]}')
+    if req.method == 'GET':  # elenco modelli = verifica chiave
+        models_calls.append((req.url, dict(req.headers)))
+        return route.fulfill(status=200, content_type='application/json', body=json.dumps({"models": LISTS[mode['list']]}))
     gem_reqs.append((req.url, dict(req.headers), req.post_data))
+    mm = re.search(r'/models/([^:]+):generateContent', req.url).group(1)
+    if mm in mode['dead']:
+        return route.fulfill(status=404, content_type='application/json', body=json.dumps({"error": {"code": 404, "message": f"models/{mm} is not found for API version v1beta, or is not supported for generateContent.", "status": "NOT_FOUND"}}))
+    if mode['mime400'] and 'responseMimeType' in (req.post_data or ''):
+        return route.fulfill(status=400, content_type='application/json', body=json.dumps({"error": {"code": 400, "message": "Invalid JSON payload received. Unknown name \"responseMimeType\" at 'generation_config'"}}))
     if mode['gemini'] == '429':
         return route.fulfill(status=429, content_type='application/json', body='{"error":{"message":"quota"}}')
     route.fulfill(status=200, content_type='application/json', body=json.dumps({"candidates":[{"content":{"parts":[{"text":json.dumps(AI)}]}}]}))
@@ -57,7 +71,11 @@ with sync_playwright() as p:
     pg.click('#btn-analyze'); pg.wait_for_selector('#page-risultato.active')
     check('chiamata Gemini con header x-goog-api-key', len(gem_reqs) == 1 and gem_reqs[0][1].get('x-goog-api-key','').startswith('AIza'))
     check('chiave NON in URL', 'key=' not in gem_reqs[0][0] and 'AIza' not in gem_reqs[0][0])
-    check('modello 2.5-flash', 'gemini-2.5-flash:generateContent' in gem_reqs[0][0])
+    check('validazione chiave = elenco modelli con header', len(models_calls) >= 1 and models_calls[0][1].get('x-goog-api-key','').startswith('AIza') and 'key=' not in models_calls[0][0])
+    st = json.loads(pg.evaluate("localStorage.getItem('nutri.settings')"))
+    check('modello scelto: stabile, non lite/preview/tts (3.8-flash)', st.get('gemModel') == 'gemini-3.8-flash' and st.get('modelV') == 2, st.get('gemModel'))
+    check('analisi usa 3.8-flash', 'gemini-3.8-flash:generateContent' in gem_reqs[0][0], gem_reqs[0][0])
+    body0 = json.loads(gem_reqs[0][2]); check('JSON mode attivo e niente temperature su Gemini 3', body0['generationConfig'].get('responseMimeType') == 'application/json' and 'temperature' not in body0['generationConfig'], body0['generationConfig'])
     check('hint nel prompt', 'pasta al pomodoro' in gem_reqs[0][2])
     check('totale kcal 360', pg.inner_text('#r-kcal') == '360', pg.inner_text('#r-kcal'))
     check('2 alimenti', pg.locator('#foods .food').count() == 2)
@@ -105,6 +123,55 @@ with sync_playwright() as p:
     pg.click('.nav a[data-nav=diario]'); pg.wait_for_selector('#d-meals .meal')
     check('import ripristina 2 pasti', pg.locator('#d-meals .meal').count() == 2)
     pg.set_input_files('#x-import', os.path.join(os.path.dirname(__file__), 'plate.jpg')) if False else None
+    # ---- scenari modello Gemini ----
+    KEY = "AIzaSyFAKEFAKEFAKEFAKEFAKEFAKEFAKE12345"
+    def settings(d): pg.evaluate("s => localStorage.setItem('nutri.settings', JSON.stringify(s))", d)
+    def getst(): return json.loads(pg.evaluate("localStorage.getItem('nutri.settings')"))
+    def analyze_once():
+        pg.goto(BASE + '#/home'); pg.reload(); pg.wait_for_selector('#step-photo:not([hidden])')
+        pg.set_input_files('#in-gal', PHOTO); pg.wait_for_selector('#step-preview:not([hidden])'); pg.click('#btn-analyze'); pg.wait_for_selector('#page-risultato.active, #alerts .alert.err', timeout=20000)
+    # C. migrazione all'avvio: modello vecchio senza modelV
+    mode.update(list='full', dead=[], mime400=False); gem_reqs.clear(); models_calls.clear()
+    settings({'gemKey': KEY, 'gemModel': 'gemini-2.5-flash'}); pg.goto(BASE + '#/home'); pg.reload(); pg.wait_for_function("JSON.parse(localStorage.getItem('nutri.settings')).modelV === 2")
+    check('migrazione modello vecchio -> 3.8-flash', getst()['gemModel'] == 'gemini-3.8-flash', getst())
+    # B. 404 poi successo: modello salvato non esiste piu'
+    gem_reqs.clear(); models_calls.clear(); mode['dead'] = ['gemini-3.0-flash']
+    settings({'gemKey': KEY, 'gemModel': 'gemini-3.0-flash', 'modelV': 2})
+    analyze_once()
+    urls = [re.search(r'/models/([^:]+):', u[0]).group(1) for u in gem_reqs]
+    check('404 -> riscopre modello -> ritenta una volta e riesce', urls == ['gemini-3.0-flash', 'gemini-3.8-flash'] and pg.locator('#page-risultato.active').count() == 1, urls)
+    check('modello aggiornato salvato', getst()['gemModel'] == 'gemini-3.8-flash')
+    # B2. modello scelto a mano ma sparito: sostituito comunque
+    gem_reqs.clear(); mode['dead'] = ['gemini-3.6-flash']; settings({'gemKey': KEY, 'gemModel': 'gemini-3.6-flash', 'gemModelManual': True, 'modelV': 2}); analyze_once()
+    check('404 su modello manuale -> sostituito', [re.search(r'/models/([^:]+):', u[0]).group(1) for u in gem_reqs] == ['gemini-3.6-flash', 'gemini-3.8-flash'])
+    # B3. tutti i modelli 404 -> errore italiano, niente loop
+    gem_reqs.clear(); mode['dead'] = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-3.9-flash-lite', 'gemini-2.5-flash-lite', 'gemini-3.9-flash-preview']
+    settings({'gemKey': KEY, 'gemModel': 'gemini-3.8-flash', 'modelV': 2}); analyze_once()
+    check('404 persistente -> max 3 tentativi + messaggio chiaro', len(gem_reqs) == 3 and 'Modello AI non disponibile' in pg.inner_text('#alerts'), (len(gem_reqs), pg.inner_text('#alerts')[:80]))
+    pg.screenshot(path=f'{OUT}/09b-modello-errore.png', full_page=True)
+    mode['dead'] = []
+    # D. preferenze: solo lite -> lite stabile piu' recente; solo preview -> preview non-lite
+    for lst, exp in (('lite', 'gemini-3.5-flash-lite'), ('preview', 'gemini-3.9-flash-preview')):
+        mode['list'] = lst; settings({}); pg.goto(BASE + '#/home'); pg.reload()
+        pg.fill('#in-key', KEY); pg.click('#btn-savekey'); pg.wait_for_function("!!JSON.parse(localStorage.getItem('nutri.settings')||'{}').gemModel")
+        check(f'lista {lst}: scelto {exp}', getst()['gemModel'] == exp, getst().get('gemModel'))
+    # E. dropdown in Opzioni + scelta manuale usata
+    mode['list'] = 'full'; settings({'gemKey': KEY, 'gemModel': 'gemini-3.8-flash', 'modelV': 2}); pg.goto(BASE + '#/impostazioni'); pg.reload()
+    pg.wait_for_function("document.querySelectorAll('#s-model option').length > 3")
+    opts = pg.eval_on_selector_all('#s-model option', 'els => els.map(e => e.value)')
+    check('dropdown: automatico + modelli flash validi, senza tts/live/pro/embedding', opts[0] == '' and 'gemini-3.6-flash' in opts and not any(('tts' in o or 'live' in o or 'pro' in o or 'embedding' in o or 'gemma' in o or 'image' in o) for o in opts), opts)
+    pg.select_option('#s-model', 'gemini-3.6-flash'); gem_reqs.clear(); analyze_once()
+    check('scelta manuale usata per l\'analisi', 'gemini-3.6-flash:generateContent' in gem_reqs[0][0] and getst()['gemModelManual'] is True)
+    pg.goto(BASE + '#/impostazioni'); pg.reload(); pg.wait_for_selector('#s-refresh'); pg.select_option('#s-model', ''); pg.wait_for_function("JSON.parse(localStorage.getItem('nutri.settings')).gemModelManual === false && JSON.parse(localStorage.getItem('nutri.settings')).gemModel === 'gemini-3.8-flash'")
+    check('torna ad automatico', getst()['gemModel'] == 'gemini-3.8-flash', getst())
+    pg.screenshot(path=f'{OUT}/09c-opzioni-modelli.png', full_page=True)
+    # F. se il server rifiuta responseMimeType, ritenta senza
+    gem_reqs.clear(); mode['mime400'] = True; analyze_once()
+    check('ripiego senza JSON mode', len(gem_reqs) == 2 and 'responseMimeType' not in gem_reqs[1][2] and pg.locator('#page-risultato.active').count() == 1, len(gem_reqs))
+    mode['mime400'] = False
+    # G. rimozione chiave pulisce modelli
+    pg.goto(BASE + '#/impostazioni'); pg.reload(); pg.click('#s-rmkey'); pg.click('dialog [data-r="1"]'); pg.wait_for_timeout(300)
+    check('rimuovi chiave: nessun modello residuo', 'gemModel' not in getst() and 'gemKey' not in getst())
     # fallback provider: niente gemini key -> alt
     pg.click('.nav a[data-nav=impostazioni]')
     pg.screenshot(path=f'{OUT}/08-impostazioni.png', full_page=True)
@@ -137,8 +204,8 @@ with sync_playwright() as p:
     pg.goto(BASE); pg.wait_for_timeout(1500)
     sw = pg.evaluate("navigator.serviceWorker.getRegistrations().then(r=>r.length)"); check('service worker registrato', sw == 1)
     pg.wait_for_function("navigator.serviceWorker.controller !== null || true")
-    keys = pg.evaluate("caches.keys()"); check('cache versionata', keys == ['nutripwa-v1.0.0'], keys)
-    cached = pg.evaluate("caches.open('nutripwa-v1.0.0').then(c=>c.keys()).then(k=>k.map(r=>new URL(r.url).pathname))")
+    keys = pg.evaluate("caches.keys()"); check('cache versionata', keys == ['nutripwa-v1.1.0'], keys)
+    cached = pg.evaluate("caches.open('nutripwa-v1.1.0').then(c=>c.keys()).then(k=>k.map(r=>new URL(r.url).pathname))")
     check('precache completo e nessuna API in cache', len(cached) >= 12 and not any('google' in c for c in cached), cached)
     m = json.load(open(os.path.join(os.path.dirname(__file__), '..', 'manifest.webmanifest')))
     pg.reload(); pg.wait_for_timeout(800)

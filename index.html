@@ -205,7 +205,9 @@
       <label for="s-key">Chiave</label>
       <input id="s-key" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…">
       <label for="s-model">Modello Gemini</label>
-      <input id="s-model" type="text" placeholder="gemini-2.5-flash" autocapitalize="off">
+      <select id="s-model"><option value="">Automatico (consigliato)</option></select>
+      <p class="hint" id="s-modelhint"></p>
+      <button class="btn ghost" type="button" id="s-refresh" style="margin-top:.4rem">🔄 Aggiorna elenco modelli</button>
       <div class="btns" style="margin-top:.8rem">
         <button class="btn" type="button" id="s-savekey">Salva</button>
         <button class="btn warn" type="button" id="s-rmkey">Rimuovi la chiave</button>

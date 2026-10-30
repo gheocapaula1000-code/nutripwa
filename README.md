@@ -25,6 +25,8 @@ Altre funzioni:
 2. Clicca **Create API key** (Crea chiave API).
 3. Copia la chiave (inizia con `AIza…`) e incollala in NutriPWA al passo 1.
 
+**Modello:** NutriPWA non usa un nome di modello fisso. Quando salvi la chiave (e se un modello sparisce) chiede a Google l’elenco dei modelli disponibili *per la tua chiave* e sceglie il migliore: il più recente della famiglia “Flash”, preferendo quelli stabili e non “lite”. In **Opzioni → Modello Gemini** puoi vedere l’elenco, aggiornarlo o sceglierne uno a mano.
+
 Il piano gratuito ha limiti giornalieri e al minuto; per uso personale bastano. Se li superi l’app lo dice in italiano: aspetta un po’ o configura un provider alternativo. Nota: sul piano gratuito Google può usare i contenuti inviati per migliorare i propri servizi – leggi le condizioni del tuo piano e non inviare foto con persone o dati personali.
 
 ### Provider alternativi (OpenAI-compatibili)
